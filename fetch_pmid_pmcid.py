@@ -118,15 +118,10 @@ def run_for_molecule(mol, credentials):
 
 if __name__ == "__main__":
     credentials = [
-        ("ayishanishana.ciods@yenepoya.edu.in", "913e27e3607a8e7ea9655beb8c7e2efddb09"),
-        ("alimathsambreena.ciods@yenepoya.edu.in", "5a3295e8aaafcd066e0f0899341104a21808"),
-        ("24665@yenepoya.edu.in", "389d936615c9ddebb876e256a7dd6b1b8f09"),
-        ("samshisam87@gmail.com", "2d95e759a9ae1dd725248f9ab5bd6b3b2d09"),
-        ("prathikciods@gmail.com", "f668ec9336ed118d5012431cc1eee99fdb08"),
-        ("prathikbs.ciods@yenepoya.edu.in", "70a470634f876fad7fa8d9143913258b3e08"),
-
-
-    ]
+        ("email", "api_key"),
+        ("email", "api_key"),
+        ("email", "api_key"),
+        ("email", "api_key"),]
 
     molecules = ["IL19"]
 
