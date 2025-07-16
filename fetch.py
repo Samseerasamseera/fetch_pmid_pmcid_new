@@ -7,17 +7,13 @@ import threading
 class PubMedProcessor:
     def __init__(self, molecule, credentials):
         self.molecule = molecule
-        self.credentials = credentials
+        self.credentials = credentials  
         self.tool = "Gene-ius-pathways"
         self.pmid_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
         self.idconv_url = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
-        self.email, self.api_key = self.get_random_credentials()
 
     def get_random_credentials(self):
         return random.choice(self.credentials)
-
-    def rotate_credentials(self):
-        self.email, self.api_key = self.get_random_credentials()
 
     def search_query_generator(self, molecule):
         return f'"{molecule}"'
@@ -25,9 +21,9 @@ class PubMedProcessor:
     def fetch_all_pmids(self):
         all_pmids = []
         start = 0
-        MAX_PMID_LIMIT = 9999  # NCBI hard limit for esearch retstart
 
         while True:
+            email, api_key = self.get_random_credentials()
             params = {
                 "db": "pubmed",
                 "term": self.search_query_generator(self.molecule),
@@ -35,57 +31,47 @@ class PubMedProcessor:
                 "retmax": 10000,
                 "retstart": start,
                 "tool": self.tool,
-                "email": self.email,
-                "api_key": self.api_key
+                "email": email,
+                "api_key": api_key
             }
 
             while True:
                 try:
                     response = requests.get(self.pmid_url, params=params)
                     if response.status_code == 200:
-                        try:
-                            data = response.json()
-                            break
-                        except Exception as json_error:
-                            print(f" JSON error (PMID fetch): {json_error}. Retrying in 60s...")
-                            print(f"Response content: {response.text[:300]}")
-                            time.sleep(60)
+                        break
                     else:
-                        print(f" Status {response.status_code} (PMID fetch). Retrying in 60s...")
+                        print(f" Failed to fetch batch at start={start} (status {response.status_code}). Retrying in 60s...")
                         time.sleep(60)
                 except Exception as e:
-                    print(f" Exception (PMID fetch): {e}. Retrying in 60s...")
+                    print(f" Exception while fetching PMIDs: {e}. Retrying in 60s...")
                     time.sleep(60)
 
+            data = response.json()
             batch_pmids = data.get("esearchresult", {}).get("idlist", [])
             if not batch_pmids:
                 break
             all_pmids.extend(batch_pmids)
             start += len(batch_pmids)
-
-            if start >= MAX_PMID_LIMIT:
-                print(f"⚠️ Reached NCBI maximum limit of {MAX_PMID_LIMIT} PMIDs. Stopping further fetch.")
-                break
-
             time.sleep(0.4)
 
         return all_pmids
 
-
     def convert_pmids_to_pmcids_df(self, pmids):
         results = []
-        batch_size = 200
 
+        batch_size = 200
         for i in range(0, len(pmids), batch_size):
             batch = pmids[i:i + batch_size]
+            email, api_key = self.get_random_credentials()
             headers = {
-                "User-Agent": f"{self.tool}/1.0 (mailto:{self.email})"
+                "User-Agent": f"{self.tool}/1.0 (mailto:{email})"
             }
 
             params = {
                 "tool": self.tool,
-                "email": self.email,
-                "api_key": self.api_key,
+                "email": email,
+                "api_key": api_key,
                 "format": "json",
                 "ids": ",".join(batch)
             }
@@ -98,44 +84,36 @@ class PubMedProcessor:
                             data = response.json()
                             record_map = {str(r.get("pmid")): r.get("pmcid") for r in data.get("records", [])}
                             for pmid in batch:
-                                results.append({"PMID": pmid, "PMCID": record_map.get(pmid)})
+                                pmcid = record_map.get(pmid)
+                                results.append({"PMID": pmid, "PMCID": pmcid})
                             break
-                        except Exception as json_error:
-                            print(f" JSON error (PMCID convert): {json_error}. Retrying in 60s...")
-                            print(f"Response content: {response.text[:300]}")
-                            time.sleep(60)
+                        except Exception as e:
+                            print(f" Error parsing JSON response: {e}")
+                            break
                     else:
-                        print(f" Status {response.status_code} (PMCID convert). Retrying in 60s...")
+                        print(f" Failed to convert batch PMIDs (status {response.status_code}). Retrying in 60s...")
                         time.sleep(60)
                 except Exception as e:
-                    print(f" Exception (PMCID convert): {e}. Retrying in 60s...")
+                    print(f" Exception during PMCID fetch: {e}. Retrying in 60s...")
                     time.sleep(60)
 
-            time.sleep(0.4)
+            time.sleep(0.4)  
 
         return pd.DataFrame(results)
 
 
-def run_for_molecule(mol, credentials, index):
+# === Runner for a single molecule ===
+def run_for_molecule(mol, credentials):
     processor = PubMedProcessor(mol, credentials)
-
-    # Rotate credentials after every 3-5 molecules
-    if index % random.randint(3, 5) == 0:
-        processor.rotate_credentials()
-        print(f"🔄 Rotated API key for molecule: {mol}")
-
-    print(f"🔍 Starting: {mol} using {processor.email}")
     pmids = processor.fetch_all_pmids()
-    print(f"[{mol}] ✅ PMIDs fetched: {len(pmids)}")
+    print(f"[{mol}]  PMIDs fetched: {len(pmids)}")
 
     if pmids:
         df = processor.convert_pmids_to_pmcids_df(pmids)
         df.to_csv(f"{mol}_pmid_to_pmcid.csv", index=False)
-        print(f"[{mol}] ✅ Saved to {mol}_pmid_to_pmcid.csv")
+        print(f"[{mol}]  Saved to {mol}_pmid_to_pmcid.csv")
     else:
-        print(f"[{mol}] ⚠️ No PMIDs found.")
-
-    time.sleep(5)
+        print(f"[{mol}] No PMIDs found.")
 
 
 if __name__ == "__main__":
@@ -146,13 +124,15 @@ if __name__ == "__main__":
         ("samshisam87@gmail.com", "2d95e759a9ae1dd725248f9ab5bd6b3b2d09"),
         ("prathikciods@gmail.com", "f668ec9336ed118d5012431cc1eee99fdb08"),
         ("prathikbs.ciods@yenepoya.edu.in", "70a470634f876fad7fa8d9143913258b3e08"),
+
+
     ]
 
-    molecules = ["IL19", "IL24", "axl", "camkk1", "taf6", "chek1", "egfr", "pak1", "cdk", "rnpep", "dstn", "fgfr", "aak1"]
+    molecules = ["IL19"]
 
     threads = []
-    for idx, mol in enumerate(molecules):
-        t = threading.Thread(target=run_for_molecule, args=(mol, credentials, idx))
+    for mol in molecules:
+        t = threading.Thread(target=run_for_molecule, args=(mol, credentials))
         t.start()
         threads.append(t)
 
